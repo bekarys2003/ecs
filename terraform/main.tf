@@ -67,3 +67,43 @@ module "cognito" {
   name     = local.name
   app_fqdn = var.route53_record_name
 }
+
+module "hr_feed_queue" {
+  source = "./modules/sqs"
+  name   = "${local.name}-hr-feed-queue"
+}
+
+module "integration_iam" {
+  source    = "./modules/iam"
+  name      = "${local.name}-integration"
+  queue_arn = module.hr_feed_queue.queue_arn
+}
+
+module "hr_feed_ingest_lambda" {
+  source   = "./modules/lambda_ingest"
+  name     = "${local.name}-hr-feed-ingest"
+  role_arn  = module.integration_iam.lambda_role_arn
+  queue_url = module.hr_feed_queue.queue_url
+  # tags    = local.tags  # only if you defined local.tags
+}
+
+module "integrations_api" {
+  source                = "./modules/apigw_http"
+  name                  = "${local.name}-integrations-api"
+  lambda_invoke_arn      = module.hr_feed_ingest_lambda.invoke_arn
+  lambda_function_name   = module.hr_feed_ingest_lambda.function_name
+  # tags                 = local.tags
+}
+
+module "hr_feed_consumer_lambda" {
+  source    = "./modules/lambda_consumer"
+  name      = "${local.name}-hr-feed-consumer"
+  queue_arn = module.hr_feed_queue.queue_arn
+  # tags    = local.tags  # only if you defined local.tags
+}
+
+module "dlq_alarm" {
+  source   = "./modules/alarms"
+  name     = local.name
+  dlq_name = "${local.name}-hr-feed-queue-dlq"
+}
